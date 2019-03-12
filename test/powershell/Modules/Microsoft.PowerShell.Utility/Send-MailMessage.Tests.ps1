@@ -61,6 +61,19 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
                 SmtpServer = "127.0.0.1"
             }
         }
+        @{
+            Name = "with Cc, Bcc"
+            InputObject = @{
+                From = "user01@example.com"
+                To = "user02@example.com"
+                Bcc = "bcc01@example.com", "bcc02@example.com"
+                Cc = "cc01@example.com", "cc02@example.com"
+                ReplyTo = "noreply@example.com"
+                Subject = "Subject $(Get-Date)"
+                Body = "Body $(Get-Date)"
+                SmtpServer = "127.0.0.1"
+            }
+        }
     )
 
     It "Can send mail message using named parameters <Name>" -TestCases $testCases {
@@ -73,11 +86,12 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
         $mail = Read-Mail
 
         $mail.FromAddress | Should -BeExactly $InputObject.From
-        $mail.ToAddresses | Should -BeExactly $InputObject.To
+        $mail.ToAddresses | Should -BeExactly @($InputObject.Bcc + $InputObject.Cc)
 
         $mail.Headers["From"] | Should -BeExactly $InputObject.From
         $mail.Headers["To"] | Should -BeExactly $InputObject.To
-        $mail.Headers["Reply-To"] | Should -BeExactly $InputObject.ReplyTo
+        $mail.Headers["Reply-To"] | Should -BeExactly @($InputObject.ReplyTo + $InputObject.Bcc + $InputObject.Cc)
+        $mail.Headers["Bcc"] | Should -BeExactly $InputObject.Bcc
         $mail.Headers["Subject"] | Should -BeExactly $InputObject.Subject
 
         $mail.MessageParts.Count | Should -BeExactly 1
