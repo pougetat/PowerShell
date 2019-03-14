@@ -44,7 +44,7 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
             Name = "with mandatory parameters"
             InputObject = @{
                 From = "user01@example.com"
-                To = "user02@example.com"
+                To = "user02@example.com", "user03@example.com"
                 Subject = "Subject $(Get-Date)"
                 Body = "Body $(Get-Date)"
                 SmtpServer = "127.0.0.1"
@@ -54,7 +54,7 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
             Name = "with ReplyTo"
             InputObject = @{
                 From = "user01@example.com"
-                To = "user02@example.com"
+                To = "user02@example.com", "user03@example.com"
                 ReplyTo = "noreply@example.com"
                 Subject = "Subject $(Get-Date)"
                 Body = "Body $(Get-Date)"
@@ -65,7 +65,7 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
             Name = "with Cc, Bcc"
             InputObject = @{
                 From = "user01@example.com"
-                To = "user02@example.com"
+                To = "user02@example.com", "user03@example.com"
                 Bcc = "bcc01@example.com", "bcc02@example.com"
                 Cc = "cc01@example.com", "cc02@example.com"
                 ReplyTo = "noreply@example.com"
@@ -85,13 +85,18 @@ Describe "Send-MailMessage" -Tags CI, RequireSudoOnUnix {
 
         $mail = Read-Mail
 
+        Write-Host ($mail.Headers | Format-Table | Out-String)
+
         $mail.FromAddress | Should -BeExactly $InputObject.From
-        $mail.ToAddresses | Should -BeExactly @($InputObject.Bcc + $InputObject.Cc)
+
+        $result = [array]$mail.ToAddresses
+        $expectedResult = [array]$InputObject.To + $InputObject.Bcc + $InputObject.Cc
+        $mail.ToAddresses | Should -BeExactly $expectedResult
 
         $mail.Headers["From"] | Should -BeExactly $InputObject.From
         $mail.Headers["To"] | Should -BeExactly $InputObject.To
-        $mail.Headers["Reply-To"] | Should -BeExactly @($InputObject.ReplyTo + $InputObject.Bcc + $InputObject.Cc)
-        $mail.Headers["Bcc"] | Should -BeExactly $InputObject.Bcc
+        $mail.Headers["Reply-To"] | Should -BeExactly $InputObject.ReplyTo
+        # $mail.Headers["BCC"] | Should -BeExactly $InputObject.Bcc
         $mail.Headers["Subject"] | Should -BeExactly $InputObject.Subject
 
         $mail.MessageParts.Count | Should -BeExactly 1
