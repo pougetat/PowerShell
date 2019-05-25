@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 
 using Microsoft.Management.Infrastructure;
 
@@ -36,17 +37,36 @@ namespace Microsoft.PowerShell.Commands
         internal const string MicrosoftNetworkAdapterNamespace = "root/StandardCimv2";
         internal const string DefaultQueryDialect = "WQL";
 
+        internal struct QueryInfo {
+            public QueryInfo(string psObjectPropertyName, string property, string wmiClass)
+            {
+                this.psObjectPropertyName = psObjectPropertyName;
+                this.wmiPropertyName = property;
+                this.wmiClass = wmiClass;
+            }
+
+            public string psObjectPropertyName;
+            public string wmiPropertyName;
+            public string wmiClass;
+
+            public int HashCode() {
+                return (wmiPropertyName + wmiClass).GetHashCode();
+            }
+        }
+
         /// <summary>
         /// Create a WQL query string to retrieve all properties from
         /// the specified WMI class.
         /// </summary>
         /// <param name="from">A string containing the WMI class name.</param>
+        /// <param name="requestedProperties">A set of properties to query.</param>
         /// <returns>
         /// A string containing the WQL query string
         /// </returns>
-        internal static string WqlQueryAll(string from)
+        internal static string WqlQueryProperties(string from, HashSet<QueryInfo> requestedProperties)
         {
-            return "SELECT * from " + from;
+            var wmiPropertyNames = requestedProperties.ToList().Select(qInfo => qInfo.wmiPropertyName);
+            return "SELECT " + string.Join(",", wmiPropertyNames) + " from " + from;
         }
 
         /// <summary>
@@ -69,6 +89,9 @@ namespace Microsoft.PowerShell.Commands
         /// A string containing the name of the WMI class from which to populate
         /// the resultant object.
         /// </param>
+        /// <param name="requestedProperties">
+        /// A set containing the properties to query
+        /// </param>
         /// <returns>
         /// A new object of type T if successful, null otherwise.
         /// </returns>
@@ -77,7 +100,7 @@ namespace Microsoft.PowerShell.Commands
         /// named properties in the WMI class instance. The WMI property is converted
         /// to the type of T's property or field.
         /// </remarks>
-        internal static T GetFirst<T>(CimSession session, string nameSpace, string wmiClassName) where T : class, new()
+        internal static T GetFirst<T>(CimSession session, string nameSpace, string wmiClassName, HashSet<QueryInfo> requestedProperties) where T : class, new()
         {
             if (string.IsNullOrEmpty(wmiClassName))
                 throw new ArgumentException("String argument may not be null or empty", "wmiClassName");
@@ -88,7 +111,7 @@ namespace Microsoft.PowerShell.Commands
                 var binding = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
                 T rv = new T();
 
-                using (var instance = session.QueryFirstInstance(nameSpace, CIMHelper.WqlQueryAll(wmiClassName)))
+                using (var instance = session.QueryFirstInstance(nameSpace, CIMHelper.WqlQueryProperties(wmiClassName, requestedProperties)))
                 {
                     SetObjectDataMembers(rv, binding, instance);
                 }
@@ -122,6 +145,9 @@ namespace Microsoft.PowerShell.Commands
         /// A string containing the name of the WMI class from which to populate
         /// the resultant array elements.
         /// </param>
+        /// <param name="requestedProperties">
+        /// A set containing the properties to query
+        /// </param>
         /// <returns>
         /// An array of new objects of type T if successful, null otherwise.
         /// </returns>
@@ -130,7 +156,7 @@ namespace Microsoft.PowerShell.Commands
         /// named properties in the WMI class instance. The WMI property is converted
         /// to the type of T's property or field.
         /// </remarks>
-        internal static T[] GetAll<T>(CimSession session, string nameSpace, string wmiClassName) where T : class, new()
+        internal static T[] GetAll<T>(CimSession session, string nameSpace, string wmiClassName, HashSet<QueryInfo> requestedProperties) where T : class, new()
         {
             if (string.IsNullOrEmpty(wmiClassName))
                 throw new ArgumentException("String argument may not be null or empty", "wmiClassName");
@@ -139,7 +165,7 @@ namespace Microsoft.PowerShell.Commands
 
             try
             {
-                var instances = session.QueryInstances(nameSpace, CIMHelper.WqlQueryAll(wmiClassName));
+                var instances = session.QueryInstances(nameSpace, CIMHelper.WqlQueryProperties(wmiClassName, requestedProperties));
 
                 if (instances != null)
                 {
@@ -183,6 +209,9 @@ namespace Microsoft.PowerShell.Commands
         /// A string containing the name of the WMI class from which to populate
         /// the resultant array elements.
         /// </param>
+        /// <param name="requestedProperties">
+        /// A set containing the properties to query
+        /// </param>
         /// <returns>
         /// An array of new objects of type T if successful, null otherwise.
         /// </returns>
@@ -191,9 +220,9 @@ namespace Microsoft.PowerShell.Commands
         /// named properties in the WMI class instance. The WMI property is converted
         /// to the type of T's property or field.
         /// </remarks>
-        internal static T[] GetAll<T>(CimSession session, string wmiClassName) where T : class, new()
+        internal static T[] GetAll<T>(CimSession session, string wmiClassName, HashSet<QueryInfo> requestedProperties) where T : class, new()
         {
-            return GetAll<T>(session, DefaultNamespace, wmiClassName);
+            return GetAll<T>(session, DefaultNamespace, wmiClassName, requestedProperties);
         }
 
         internal static void SetObjectDataMember(object obj, BindingFlags binding, CimProperty cimProperty)
@@ -307,24 +336,24 @@ namespace Extensions
             return session.QueryFirstInstance(CIMHelper.DefaultNamespace, query);
         }
 
-        internal static T GetFirst<T>(this CimSession session, string wmiClassName) where T : class, new()
+        internal static T GetFirst<T>(this CimSession session, string wmiClassName, HashSet<CIMHelper.QueryInfo> requestedProperties) where T : class, new()
         {
-            return session.GetFirst<T>(CIMHelper.DefaultNamespace, wmiClassName);
+            return session.GetFirst<T>(CIMHelper.DefaultNamespace, wmiClassName, requestedProperties);
         }
 
-        internal static T GetFirst<T>(this CimSession session, string wmiNamespace, string wmiClassName) where T : class, new()
+        internal static T GetFirst<T>(this CimSession session, string wmiNamespace, string wmiClassName, HashSet<CIMHelper.QueryInfo> requestedProperties) where T : class, new()
         {
-            return CIMHelper.GetFirst<T>(session, wmiNamespace, wmiClassName);
+            return CIMHelper.GetFirst<T>(session, wmiNamespace, wmiClassName, requestedProperties);
         }
 
-        internal static T[] GetAll<T>(this CimSession session, string wmiClassName) where T : class, new()
+        internal static T[] GetAll<T>(this CimSession session, string wmiClassName, HashSet<CIMHelper.QueryInfo> requestedProperties) where T : class, new()
         {
-            return Microsoft.PowerShell.Commands.CIMHelper.GetAll<T>(session, wmiClassName);
+            return Microsoft.PowerShell.Commands.CIMHelper.GetAll<T>(session, wmiClassName, requestedProperties);
         }
 
-        internal static T[] GetAll<T>(this CimSession session, string wmiNamespace, string wmiClassName) where T : class, new()
+        internal static T[] GetAll<T>(this CimSession session, string wmiNamespace, string wmiClassName, HashSet<CIMHelper.QueryInfo> requestedProperties) where T : class, new()
         {
-            return Microsoft.PowerShell.Commands.CIMHelper.GetAll<T>(session, wmiNamespace, wmiClassName);
+            return Microsoft.PowerShell.Commands.CIMHelper.GetAll<T>(session, wmiNamespace, wmiClassName, requestedProperties);
         }
     }
 }
